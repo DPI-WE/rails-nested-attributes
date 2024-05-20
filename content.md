@@ -8,9 +8,12 @@ Nesting is a way of organizing and structuring your code to reflect the hierarch
 - **Complex Forms**: When you have a form that needs to handle attributes for multiple related models.
 - **Efficient Updates**: To update parent and child records in a single request.
 
-### Example of Nested Attributes
-Here’s how you can set up nested attributes in a Rails application:
+## Example
+Here’s how you can set up nested attributes in a Rails application. 
 
+### Model
+
+With this setup, you can manage `Task` records through the `Project` model.
 ```ruby
 # app/models/project.rb
 class Project < ApplicationRecord
@@ -19,7 +22,9 @@ class Project < ApplicationRecord
 end
 ```
 
-With this setup, you can manage `Task` records through the `Project` model. For example, in your `ProjectsController`, you can permit nested attributes for tasks:
+### Controller
+
+In your `ProjectsController`, you can permit nested attributes for tasks. You will also need to build a task in the `new` action to display the form correctly.
 
 ```ruby
 # app/controllers/projects_controller.rb
@@ -60,8 +65,7 @@ class ProjectsController < ApplicationController
 end
 ```
 
-### Form with Nested Attributes
-Here’s an example of a form that handles nested attributes:
+### Form
 
 ```erb
 <!-- app/views/projects/_form.html.erb -->
@@ -94,6 +98,100 @@ Here’s an example of a form that handles nested attributes:
       <%= task_form.check_box :_destroy %>
       <%= task_form.label :_destroy, "Remove task" %>
     </div>
+  <% end %>
+
+  <div class="actions">
+    <%= form.submit %>
+  </div>
+<% end %>
+```
+## Advanced Example
+<!-- prepopulate nested attributes for edit form - create and delete nested records upon update action -->
+There are cases where your nested attributes are in a join table, and you may want to prepopulate an edit form, create or delete records from this join table upon update.
+
+An example of this is a `Project` that has many `Members` through a `ProjectMembers` join table. Here's how you can set this up:
+
+### Model
+
+```ruby
+# app/models/project.rb
+class Project < ApplicationRecord
+  has_many :project_members, inverse_of: :project, dependent: :destroy
+  has_many :members, through: :project_members
+
+  accepts_nested_attributes_for :project_members, allow_destroy: true
+end
+```
+
+### Controller
+
+```ruby
+# app/controllers/projects_controller.rb
+class ProjectsController < ApplicationController
+  def new
+    @project = Project.new
+    @project.member.build
+  end
+
+  def create
+    @project = Project.new(project_params)
+    if @project.save
+      redirect_to @project, notice: 'Project was successfully created.'
+    else
+      render :new
+    end
+  end
+
+  def edit
+    @project = Project.find(params[:id])
+  end
+
+  def update
+    @project = Project.find(params[:id])
+    if @project.update(project_params)
+      redirect_to @project, notice: 'Project was successfully updated.'
+    else
+      render :edit
+    end
+  end
+
+  private
+
+  # note: arrays need to be the last argument  
+  def project_params
+    params.require(:project).permit(
+      :name, 
+      :description, 
+      project_members_attributes: [:id, :member_id, :_destroy])
+  end
+end
+```
+
+### Form
+
+```erb
+<!-- app/views/projects/_form.html.erb -->
+<%= form_with(model: @project) do |form| %>
+  <div class="field">
+    <%= form.label :name %>
+    <%= form.text_field :name %>
+  </div>
+
+  <div class="field">
+    <%= form.label :description %>
+    <%= form.text_area :description %>
+  </div>
+
+  <h3>Members</h3>
+  <% members.each do |member| %>
+    <!-- for each member, find the project_members record or build a new one -->
+    <% project_member = project.project_members.where({ member_id: member.id }).at(0) || project.project_members.build({ member_id: member.id }) %>
+    <%= form.fields_for :project_members, project_member do |project_member_fields| %>
+      <%= project_member_fields.hidden_field :member_id, { value: member.id } %>
+      <!-- for each project_member, create a check_box that is checked if the record was existing, unchecked if not -->
+      <%= project_member_fields.check_box :_destroy, { class: "btn-check", checked: project_member.persisted? }, "0", "1" %>
+      <%= project_member_fields.label :_destroy, member.name %>
+    <% end %>
   <% end %>
 
   <div class="actions">
